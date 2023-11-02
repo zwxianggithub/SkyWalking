@@ -31,7 +31,6 @@ import org.apache.skywalking.library.elasticsearch.requests.search.SearchBuilder
 import org.apache.skywalking.library.elasticsearch.response.search.SearchHit;
 import org.apache.skywalking.library.elasticsearch.response.search.SearchResponse;
 import org.apache.skywalking.oap.server.core.analysis.IDManager;
-import org.apache.skywalking.oap.server.core.analysis.Layer;
 import org.apache.skywalking.oap.server.core.analysis.TimeBucket;
 import org.apache.skywalking.oap.server.core.analysis.manual.endpoint.EndpointTraffic;
 import org.apache.skywalking.oap.server.core.analysis.manual.instance.InstanceTraffic;
@@ -71,7 +70,6 @@ public class MetadataQueryEsDAO extends EsDAO implements IMetadataQueryDAO {
     private final int scrollingBatchSize;
     private String endpointTrafficNameAlias;
     private boolean aliasNameInit = false;
-    private final int layerSize;
 
     protected final Function<SearchHit, Service> searchHitServiceFunction = hit -> {
         final var sourceAsMap = hit.getSource();
@@ -121,7 +119,6 @@ public class MetadataQueryEsDAO extends EsDAO implements IMetadataQueryDAO {
         super(client);
         this.queryMaxSize = config.getMetadataQueryMaxSize();
         this.scrollingBatchSize = config.getScrollingBatchSize();
-        this.layerSize = Layer.values().length;
     }
 
     @Override
@@ -231,14 +228,14 @@ public class MetadataQueryEsDAO extends EsDAO implements IMetadataQueryDAO {
             query.must(Query.term(IndexController.LogicIndicesRegister.METRIC_TABLE_NAME, EndpointTraffic.INDEX_NAME));
         }
 
-        final var search = Search.builder().query(query).size(limit);
+        final var search = Search.builder().query(query);
 
         final var scroller = ElasticSearchScroller
             .<Endpoint>builder()
             .client(getClient())
             .search(search.build())
             .index(index)
-            .queryMaxSize(queryMaxSize)
+            .queryMaxSize(Math.min(limit, queryMaxSize))
             .resultConverter(searchHit -> {
                 final var sourceAsMap = searchHit.getSource();
 
@@ -402,14 +399,6 @@ public class MetadataQueryEsDAO extends EsDAO implements IMetadataQueryDAO {
             return buildProcess(iterator.next());
         }
         return null;
-    }
-
-    private List<Service> buildServices(SearchResponse response) {
-        List<Service> services = new ArrayList<>();
-        for (SearchHit hit : response.getHits()) {
-            services.add(searchHitServiceFunction.apply(hit));
-        }
-        return services;
     }
 
     private List<ServiceInstance> buildInstances(SearchResponse response) {
